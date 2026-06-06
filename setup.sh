@@ -53,16 +53,22 @@ fi
 cp -f "$WHISPER_BIN_SRC" "$BIN/whisper-cli"
 log "whisper-cli -> $BIN/whisper-cli"
 
-# ---- 2. Whisper model --------------------------------------------------------
-MODEL_FILE="$MODELS/ggml-small.en-q5_1.bin"
-MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin"
-
-if [[ ! -f "$MODEL_FILE" ]]; then
-  log "Downloading Whisper model (small.en q5_1, ~190 MB)"
-  curl -L --fail -o "$MODEL_FILE" "$MODEL_URL"
-else
-  log "Whisper model already present"
-fi
+# ---- 2. Whisper models -------------------------------------------------------
+# base.en is the default (faster, fine for clear English).
+# small.en is downloaded as a quality upgrade option.
+WHISPER_MODELS=(
+  "ggml-base.en-q5_1.bin"
+  "ggml-small.en-q5_1.bin"
+)
+for m in "${WHISPER_MODELS[@]}"; do
+  if [[ ! -f "$MODELS/$m" ]]; then
+    log "Downloading Whisper model $m"
+    curl -L --fail -o "$MODELS/$m" \
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$m"
+  else
+    log "Whisper model $m already present"
+  fi
+done
 
 # ---- 3. Piper ----------------------------------------------------------------
 PIPER_DIR="$VENDOR/piper"
