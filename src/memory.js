@@ -72,6 +72,8 @@ export function persistTurn(sessionId, { userText, parsed, userAudioPath = null 
 
 // Close a session: ask Claude to summarize, persist the summary, and merge
 // any new weak areas into the profile so they show up in future sessions.
+// Does NOT auto-update the level — returns level_change_proposed so the
+// caller (UI) can confirm with the user before mutating the profile.
 export async function endSession(sessionId, { applyLevel = false } = {}) {
   const rows = db
     .prepare('SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC')
@@ -107,7 +109,12 @@ export async function endSession(sessionId, { applyLevel = false } = {}) {
   if (!textBlock) throw new Error('Summary response had no text block');
   const summary = JSON.parse(textBlock.text);
 
+  const profile = getProfile();
   const levelSnapshot = summary.suggested_level === 'none' ? null : summary.suggested_level;
+  const levelChangeProposed =
+    levelSnapshot && levelSnapshot !== profile.level
+      ? { from: profile.level, to: levelSnapshot }
+      : null;
 
   db.prepare(`
     UPDATE sessions
@@ -116,17 +123,26 @@ export async function endSession(sessionId, { applyLevel = false } = {}) {
   `).run(nowIso(), summary.summary, JSON.stringify(summary.topics), levelSnapshot, sessionId);
 
   if (summary.weak_areas?.length) {
-    const profile = getProfile();
     const existing = Array.isArray(profile.weak_areas) ? profile.weak_areas : [];
     const merged = Array.from(new Set([...existing, ...summary.weak_areas])).slice(-15);
     setProfile('weak_areas', merged);
   }
 
-  if (applyLevel && levelSnapshot) {
-    setProfile('level', levelSnapshot);
+  if (applyLevel && levelChangeProposed) {
+    setProfile('level', levelChangeProposed.to);
   }
 
-  return summary;
+  return { ...summary, level_change_proposed: levelChangeProposed };
+}
+
+const VALID_LEVELS = new Set(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
+
+// Explicit level update, used when the UI confirms an end-of-session suggestion.
+export function updateLevel(level) {
+  if (!VALID_LEVELS.has(level)) {
+    throw new Error(`Invalid CEFR level: ${level}`);
+  }
+  setProfile('level', level);
 }
 
 // CLI: inspect what's currently in memory. Useful for debugging.

@@ -54,8 +54,15 @@
     <p id="summary-text"></p>
     <p><strong>Topics:</strong> <span id="summary-topics"></span></p>
     <p><strong>Weak areas:</strong> <span id="summary-weak"></span></p>
-    <p><strong>Suggested level:</strong> <span id="summary-level"></span></p>
-    <form method="dialog"><button>Close</button></form>
+    <div id="level-block">
+      <p>
+        <strong>Level:</strong>
+        <span id="summary-level"></span>
+        <button id="apply-level-btn" hidden>Apply</button>
+        <span id="level-applied" hidden class="muted">✓ applied</span>
+      </p>
+    </div>
+    <form method="dialog"><button id="close-summary-btn">Close</button></form>
   </dialog>
 
   <script type="module" src="/app.js"></script>

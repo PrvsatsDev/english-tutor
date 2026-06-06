@@ -27,6 +27,7 @@ let chunks = [];
 let totalTokensIn = 0;
 let totalTokensOut = 0;
 let turnCount = 0;
+let currentLevel = null;
 
 function setState(next) {
   state = next;
@@ -156,8 +157,9 @@ function connect() {
 function handleServerMessage(msg) {
   switch (msg.type) {
     case 'session_start':
+      currentLevel = msg.profile.level || null;
       sessionInfo.textContent = `Session #${msg.sessionId} · ${msg.memory.summaries} prior summaries · ${msg.memory.corrections} prior corrections`;
-      stats.level.textContent = msg.profile.level || '—';
+      stats.level.textContent = currentLevel || '—';
       setState('idle');
       break;
 
@@ -196,11 +198,38 @@ function handleServerMessage(msg) {
         $('summary-text').textContent = msg.summary.summary;
         $('summary-topics').textContent = msg.summary.topics.join(', ') || '—';
         $('summary-weak').textContent = msg.summary.weak_areas.join('; ') || '—';
-        $('summary-level').textContent = msg.summary.suggested_level;
+
+        const applyBtn = $('apply-level-btn');
+        const appliedTag = $('level-applied');
+        applyBtn.hidden = true;
+        appliedTag.hidden = true;
+        delete applyBtn.dataset.proposedTo;
+
+        if (msg.summary.level_change_proposed) {
+          const { from, to } = msg.summary.level_change_proposed;
+          $('summary-level').textContent = `${from} → ${to}`;
+          applyBtn.textContent = `Apply ${to}`;
+          applyBtn.dataset.proposedTo = to;
+          applyBtn.hidden = false;
+        } else {
+          $('summary-level').textContent =
+            msg.summary.suggested_level === 'none'
+              ? `${currentLevel} (unchanged)`
+              : `${msg.summary.suggested_level} (unchanged)`;
+        }
         summaryDialog.showModal();
       }
       setState('ended');
       break;
+
+    case 'profile_updated': {
+      currentLevel = msg.level;
+      stats.level.textContent = msg.level;
+      $('apply-level-btn').hidden = true;
+      $('level-applied').hidden = false;
+      setStatus(`level updated → ${msg.level}`, 'ok');
+      break;
+    }
 
     case 'error': {
       setStatus(`server: ${msg.message}`, 'error');
@@ -279,6 +308,22 @@ pttEl.addEventListener('touchend',   (e) => { e.preventDefault(); stopRecording(
 
 endBtn.addEventListener('click', () => {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end' }));
+});
+
+$('apply-level-btn').addEventListener('click', () => {
+  const to = $('apply-level-btn').dataset.proposedTo;
+  if (!to) return;
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'apply_level', level: to }));
+  }
+});
+
+// When the user dismisses the summary dialog, ask the server to close
+// the WebSocket cleanly (don't rely on tab-close to do it).
+summaryDialog.addEventListener('close', () => {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'close' }));
+  }
 });
 
 connect();

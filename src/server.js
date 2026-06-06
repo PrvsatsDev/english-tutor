@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 import { init as initDb } from './db.js';
+import { updateLevel } from './memory.js';
 import { synthesize } from './tts.js';
 import { transcribe } from './stt.js';
 import { createTutor } from './tutor.js';
@@ -104,7 +105,18 @@ wss.on('connection', (ws) => {
     catch { send(ws, { type: 'error', message: 'Invalid JSON control message' }); return; }
 
     if (msg.type === 'end') {
+      // Don't close the socket here — let the client send `apply_level`
+      // or `close` after the user dismisses the summary dialog.
       await finalize('client end');
+    } else if (msg.type === 'apply_level') {
+      try {
+        updateLevel(msg.level);
+        send(ws, { type: 'profile_updated', level: msg.level });
+        console.log(`[ws] session=#${tutor.sessionId} level updated → ${msg.level}`);
+      } catch (err) {
+        send(ws, { type: 'error', message: err.message });
+      }
+    } else if (msg.type === 'close') {
       ws.close();
     } else {
       send(ws, { type: 'error', message: `Unknown control type: ${msg.type}` });

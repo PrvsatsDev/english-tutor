@@ -54,10 +54,25 @@ ws.on('message', async (raw) => {
         console.log('  topics:', msg.summary.topics.join(', '));
         console.log('  weak areas:', msg.summary.weak_areas.join('; ') || '(none)');
         console.log('  suggested level:', msg.summary.suggested_level);
+        if (msg.summary.level_change_proposed) {
+          const { from, to } = msg.summary.level_change_proposed;
+          console.log(`  level change proposed: ${from} → ${to}`);
+          if (process.env.APPLY_LEVEL === '1') {
+            console.log('  (APPLY_LEVEL=1) sending apply_level...');
+            ws.send(JSON.stringify({ type: 'apply_level', level: to }));
+            return; // wait for profile_updated before closing
+          }
+        } else {
+          console.log('  level change proposed: none');
+        }
       } else {
         console.log('\n[client] (empty session, no summary)');
       }
-      ws.close();
+      ws.send(JSON.stringify({ type: 'close' }));
+      break;
+    case 'profile_updated':
+      console.log(`[client] PROFILE UPDATED: level → ${msg.level}`);
+      ws.send(JSON.stringify({ type: 'close' }));
       break;
     case 'error':
       console.error('[client] SERVER ERROR:', msg.message);
