@@ -2,17 +2,62 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>English Tutor</title>
-  <style>
-    body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
-    code { background: #f3f3f3; padding: 2px 6px; border-radius: 3px; }
-  </style>
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <h1>English Tutor</h1>
-  <p>Server is up. Frontend (push-to-talk UI) lands in step 8.</p>
-  <p>WebSocket endpoint: <code>ws://localhost:3000/voice</code></p>
-  <p>To smoke-test without a browser:</p>
-  <pre><code>node src/test-voice-client.js data/audio/_tts_test.wav</code></pre>
+  <header>
+    <h1>English Tutor</h1>
+    <div class="header-right">
+      <span id="session-info">connecting…</span>
+      <button id="end-btn" disabled>End session</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="chat" class="chat" aria-live="polite">
+      <div class="placeholder">Hold <kbd>Space</kbd> to speak.</div>
+    </section>
+
+    <aside class="panel">
+      <section class="panel-block">
+        <h2>Last corrections</h2>
+        <ul id="corrections"><li class="muted">— none yet —</li></ul>
+      </section>
+      <section class="panel-block">
+        <h2>Try saying</h2>
+        <ul id="phrases"><li class="muted">— none yet —</li></ul>
+      </section>
+      <section class="panel-block">
+        <h2>Session</h2>
+        <dl id="stats">
+          <dt>Level</dt><dd id="stat-level">—</dd>
+          <dt>Turns</dt><dd id="stat-turns">0</dd>
+          <dt>Last STT / LLM / TTS</dt><dd id="stat-timings">—</dd>
+          <dt>Tokens in / out</dt><dd id="stat-tokens">0 / 0</dd>
+        </dl>
+      </section>
+    </aside>
+  </main>
+
+  <footer>
+    <div id="ptt" class="idle">
+      <span class="dot"></span>
+      <span id="ptt-label">Hold <kbd>Space</kbd> to talk</span>
+    </div>
+    <div id="status" class="status">offline</div>
+  </footer>
+
+  <dialog id="summary-dialog">
+    <h2>Session summary</h2>
+    <p id="summary-text"></p>
+    <p><strong>Topics:</strong> <span id="summary-topics"></span></p>
+    <p><strong>Weak areas:</strong> <span id="summary-weak"></span></p>
+    <p><strong>Suggested level:</strong> <span id="summary-level"></span></p>
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
+
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

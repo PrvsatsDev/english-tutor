@@ -1,0 +1,151 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1c20;
+  --panel: #23262c;
+  --border: #353941;
+  --text: #e6e8ec;
+  --muted: #8a8f99;
+  --accent: #6ea8ff;
+  --warn: #ff6b6b;
+  --ok: #57c785;
+  --kbd-bg: #2c3038;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 -apple-system, system-ui, "Segoe UI", sans-serif;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+.header-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  overflow: hidden;
+}
+
+.chat {
+  padding: 16px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.placeholder { color: var(--muted); padding: 32px; text-align: center; }
+
+.bubble {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.bubble.user   { align-self: flex-end;   background: #2e3a52; }
+.bubble.tutor  { align-self: flex-start; background: #2a2e36; }
+.bubble.pending { opacity: 0.55; font-style: italic; }
+.bubble .role { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.panel {
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.panel-block h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.panel-block ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.panel-block li { font-size: 13px; }
+.panel-block li.muted { color: var(--muted); font-style: italic; }
+.panel-block .cat { display: inline-block; font-size: 10px; text-transform: uppercase; background: #3a3f48; padding: 2px 5px; border-radius: 3px; margin-right: 4px; color: var(--muted); }
+.panel-block .orig { text-decoration: line-through; color: var(--warn); }
+.panel-block .corr { color: var(--ok); }
+.panel-block .why { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+dl#stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+dl#stats dt { color: var(--muted); }
+dl#stats dd { margin: 0; }
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+#ptt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  user-select: none;
+}
+#ptt .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: background 0.1s, transform 0.1s; }
+#ptt.idle .dot { background: var(--muted); }
+#ptt.recording .dot { background: var(--warn); transform: scale(1.4); box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.2); }
+#ptt.processing .dot { background: var(--accent); animation: pulse 1s infinite; }
+#ptt.disabled .dot { background: #444; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.status { font-size: 12px; color: var(--muted); }
+.status.ok { color: var(--ok); }
+.status.error { color: var(--warn); }
+
+button {
+  background: #3a3f48;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #444a55; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+kbd {
+  background: var(--kbd-bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", monospace;
+}
+
+dialog {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-width: 520px;
+  padding: 20px 24px;
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
