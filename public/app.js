@@ -11,6 +11,8 @@ const statusEl     = $('status');
 const endBtn       = $('end-btn');
 const sessionInfo  = $('session-info');
 const summaryDialog = $('summary-dialog');
+const vocabDialog = $('vocab-dialog');
+const vocabBtn = $('vocab-btn');
 
 const stats = {
   level: $('stat-level'),
@@ -67,7 +69,7 @@ function clearPlaceholder() {
   if (ph) ph.remove();
 }
 
-function addBubble(role, text, { pending = false } = {}) {
+function addBubble(role, text, { pending = false, audioUrl = null } = {}) {
   clearPlaceholder();
   const div = document.createElement('div');
   div.className = `bubble ${role}${pending ? ' pending' : ''}`;
@@ -75,9 +77,22 @@ function addBubble(role, text, { pending = false } = {}) {
   const span = document.createElement('span');
   span.textContent = text;
   div.appendChild(span);
+  if (audioUrl) attachReplay(div, audioUrl);
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
   return div;
+}
+
+function attachReplay(bubble, url) {
+  // Avoid duplicate buttons if called twice
+  bubble.querySelector('.replay')?.remove();
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'replay';
+  btn.title = 'Play your recording';
+  btn.textContent = '▶';
+  btn.addEventListener('click', () => { new Audio(url).play().catch(() => {}); });
+  bubble.appendChild(btn);
 }
 
 function renderCorrections(items) {
@@ -88,12 +103,27 @@ function renderCorrections(items) {
   }
   for (const c of items) {
     const li = document.createElement('li');
+    li.className = 'correction';
+    if (c.id) li.dataset.correctionId = c.id;
     li.innerHTML = `
       <span class="cat">${c.category}</span>
       <span class="orig">${escapeHtml(c.original)}</span>
       → <span class="corr">${escapeHtml(c.corrected)}</span>
       <span class="why">${escapeHtml(c.explanation)}</span>
     `;
+    if (c.id) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'resolve';
+      btn.title = "Mark as understood — stops being injected in future sessions";
+      btn.textContent = '✓';
+      btn.addEventListener('click', () => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'mark_understood', correction_id: c.id }));
+        }
+      });
+      li.appendChild(btn);
+    }
     correctionsEl.appendChild(li);
   }
 }
@@ -165,13 +195,14 @@ function handleServerMessage(msg) {
 
     case 'turn': {
       // Promote the pending "..." bubble to the real transcript, then add tutor reply
-      const pending = chatEl.querySelector('.bubble.pending');
-      if (pending) {
-        pending.classList.remove('pending');
-        pending.querySelector('span:last-child').textContent = msg.transcript;
+      let userBubble = chatEl.querySelector('.bubble.pending');
+      if (userBubble) {
+        userBubble.classList.remove('pending');
+        userBubble.querySelector('span:last-child').textContent = msg.transcript;
       } else {
-        addBubble('user', msg.transcript);
+        userBubble = addBubble('user', msg.transcript);
       }
+      if (msg.user_audio_url) attachReplay(userBubble, msg.user_audio_url);
       addBubble('tutor', msg.response.spoken);
       renderCorrections(msg.response.corrections);
       renderPhrases(msg.response.suggested_phrases);
@@ -228,6 +259,35 @@ function handleServerMessage(msg) {
       $('apply-level-btn').hidden = true;
       $('level-applied').hidden = false;
       setStatus(`level updated → ${msg.level}`, 'ok');
+      break;
+    }
+
+    case 'correction_resolved': {
+      const li = correctionsEl.querySelector(`li[data-correction-id="${msg.correction_id}"]`);
+      if (li) li.classList.add('resolved');
+      break;
+    }
+
+    case 'vocabulary': {
+      const list = $('vocab-list');
+      const empty = $('vocab-empty');
+      list.innerHTML = '';
+      if (!msg.items.length) {
+        empty.hidden = false;
+      } else {
+        empty.hidden = true;
+        for (const v of msg.items) {
+          const li = document.createElement('li');
+          const word = document.createElement('span');
+          word.textContent = v.word;
+          const when = document.createElement('span');
+          when.className = 'when';
+          when.textContent = v.introduced_at?.slice(0, 10) || '';
+          li.append(word, when);
+          list.appendChild(li);
+        }
+      }
+      vocabDialog.showModal();
       break;
     }
 
@@ -308,6 +368,12 @@ pttEl.addEventListener('touchend',   (e) => { e.preventDefault(); stopRecording(
 
 endBtn.addEventListener('click', () => {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end' }));
+});
+
+vocabBtn.addEventListener('click', () => {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'get_vocabulary' }));
+  }
 });
 
 $('apply-level-btn').addEventListener('click', () => {

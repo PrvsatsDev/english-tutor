@@ -11,7 +11,8 @@
     <h1>English Tutor</h1>
     <div class="header-right">
       <span id="session-info">connecting…</span>
-      <button id="end-btn" disabled>End session</button>
+      <button id="vocab-btn" type="button">Vocabulary</button>
+      <button id="end-btn" type="button" disabled>End session</button>
     </div>
   </header>
 
@@ -48,6 +49,13 @@
     </div>
     <div id="status" class="status">offline</div>
   </footer>
+
+  <dialog id="vocab-dialog">
+    <h2>Vocabulary introduced</h2>
+    <p class="muted small" id="vocab-empty" hidden>— nothing here yet —</p>
+    <ul id="vocab-list"></ul>
+    <form method="dialog"><button type="submit">Close</button></form>
+  </dialog>
 
   <dialog id="summary-dialog">
     <h2>Session summary</h2>

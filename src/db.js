@@ -65,8 +65,19 @@ const PROFILE_SEED = {
   weak_areas: JSON.stringify([]),
 };
 
+function ensureColumn(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+}
+
 export function init() {
   db.exec(SCHEMA);
+  // Idempotent forward migrations live here. Adding a column is safe; renaming
+  // or dropping needs a real migration step.
+  ensureColumn('corrections', 'resolved_at', 'TEXT');
+
   const upsert = db.prepare(
     'INSERT INTO profile (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'
   );

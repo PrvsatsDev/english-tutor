@@ -149,3 +149,40 @@ dialog {
   padding: 20px 24px;
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+
+.small { font-size: 12px; }
+
+/* Audio replay button on user bubbles */
+.bubble .replay {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  width: 22px; height: 22px;
+  padding: 0; margin-left: 6px;
+  font-size: 11px; line-height: 20px; cursor: pointer;
+  vertical-align: middle;
+}
+.bubble .replay:hover { color: var(--text); background: #3a3f48; }
+
+/* "Mark understood" on each correction */
+.panel-block li.correction { position: relative; padding-right: 24px; }
+.panel-block .resolve {
+  position: absolute; top: 0; right: 0;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); border-radius: 4px;
+  font-size: 11px; padding: 1px 6px; cursor: pointer;
+}
+.panel-block .resolve:hover { color: var(--ok); border-color: var(--ok); }
+.panel-block li.correction.resolved { opacity: 0.5; }
+.panel-block li.correction.resolved .resolve { display: none; }
+
+/* Vocabulary list */
+#vocab-list { list-style: none; padding: 0; margin: 0; max-height: 60vh; overflow-y: auto; }
+#vocab-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 13px;
+}
+#vocab-list li .when { color: var(--muted); font-size: 11px; }

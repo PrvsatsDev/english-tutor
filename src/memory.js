@@ -26,8 +26,9 @@ export function getSessionContext({ summariesLimit = 3, correctionsLimit = 20 } 
     .all(summariesLimit);
   const recentCorrections = db
     .prepare(`
-      SELECT original, corrected, category, explanation, ts
+      SELECT id, original, corrected, category, explanation, ts
       FROM corrections
+      WHERE resolved_at IS NULL
       ORDER BY id DESC
       LIMIT ?
     `)
@@ -51,7 +52,8 @@ const upsertVocab = () =>
   `);
 
 // Persist one full turn: student utterance, tutor reply, any corrections,
-// and any vocabulary the tutor suggested.
+// and any vocabulary the tutor suggested. Mutates parsed.corrections in
+// place to add a DB `id` to each — the UI needs it to mark them resolved.
 export function persistTurn(sessionId, { userText, parsed, userAudioPath = null }) {
   const ts = nowIso();
   const msg = insertMessage();
@@ -61,13 +63,32 @@ export function persistTurn(sessionId, { userText, parsed, userAudioPath = null 
     msg.run(sessionId, 'user', userText, userAudioPath, ts);
     msg.run(sessionId, 'tutor', parsed.spoken, null, ts);
     for (const c of parsed.corrections || []) {
-      corr.run(sessionId, c.original, c.corrected, c.category || null, c.explanation || null, ts);
+      const r = corr.run(sessionId, c.original, c.corrected, c.category || null, c.explanation || null, ts);
+      c.id = r.lastInsertRowid;
     }
     for (const phrase of parsed.suggested_phrases || []) {
       const word = phrase.trim().toLowerCase();
       if (word) vocab.run(word, ts);
     }
   })();
+}
+
+export function markCorrectionResolved(id) {
+  const r = db
+    .prepare('UPDATE corrections SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL')
+    .run(nowIso(), id);
+  return r.changes > 0;
+}
+
+export function listVocabulary({ limit = 200 } = {}) {
+  return db
+    .prepare(`
+      SELECT word, introduced_at, times_used, last_used_at, mastery
+      FROM vocabulary
+      ORDER BY introduced_at DESC
+      LIMIT ?
+    `)
+    .all(limit);
 }
 
 // Close a session: ask Claude to summarize, persist the summary, and merge

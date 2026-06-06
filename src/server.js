@@ -6,8 +6,9 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
+import { basename } from 'node:path';
 import { init as initDb } from './db.js';
-import { updateLevel } from './memory.js';
+import { listVocabulary, markCorrectionResolved, updateLevel } from './memory.js';
 import { synthesize } from './tts.js';
 import { transcribe } from './stt.js';
 import { createTutor } from './tutor.js';
@@ -21,6 +22,10 @@ await mkdir(AUDIO_DIR, { recursive: true });
 
 const app = express();
 app.use(express.static(PUBLIC_DIR));
+// Personal-use only: serves every user recording under data/audio/ over HTTP
+// so the browser can play back your own utterances. Don't expose this server
+// beyond localhost without an auth layer.
+app.use('/audio', express.static(resolve(AUDIO_DIR)));
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/voice' });
@@ -87,7 +92,8 @@ wss.on('connection', (ws) => {
         send(ws, {
           type: 'turn',
           transcript,
-          response: parsed,
+          response: parsed,                          // corrections now include DB id
+          user_audio_url: `/audio/${basename(audioPath)}`,
           audio_b64: wav.toString('base64'),
           timings: { stt_ms: sttMs, llm_ms: llmMs, tts_ms: ttsMs, total_ms: Date.now() - t0 },
           usage,
@@ -116,6 +122,11 @@ wss.on('connection', (ws) => {
       } catch (err) {
         send(ws, { type: 'error', message: err.message });
       }
+    } else if (msg.type === 'mark_understood') {
+      const changed = markCorrectionResolved(Number(msg.correction_id));
+      send(ws, { type: 'correction_resolved', correction_id: Number(msg.correction_id), changed });
+    } else if (msg.type === 'get_vocabulary') {
+      send(ws, { type: 'vocabulary', items: listVocabulary({ limit: 200 }) });
     } else if (msg.type === 'close') {
       ws.close();
     } else {
