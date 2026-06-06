@@ -81,7 +81,7 @@ function fmtList(value) {
   return String(value);
 }
 
-export function buildSystemPrompt(profile) {
+export function buildSystemPrompt({ profile, recentSummaries = [], recentCorrections = [] } = {}) {
   const lines = [
     RULES,
     '',
@@ -91,5 +91,63 @@ export function buildSystemPrompt(profile) {
     `- Goals: ${profile.goals || '(none stated)'}`,
     `- Weak areas: ${fmtList(profile.weak_areas)}`,
   ];
+
+  if (recentSummaries.length) {
+    lines.push('', 'RECENT SESSIONS (most recent first)');
+    for (const s of recentSummaries) {
+      const date = s.started_at ? s.started_at.slice(0, 10) : '?';
+      lines.push(`- [${date}] ${s.summary}`);
+      if (s.topics) {
+        try {
+          const topics = JSON.parse(s.topics);
+          if (topics.length) lines.push(`  topics: ${topics.join(', ')}`);
+        } catch { /* ignore malformed */ }
+      }
+    }
+  }
+
+  if (recentCorrections.length) {
+    lines.push('', 'RECENT CORRECTIONS (avoid letting the same mistake pass silently)');
+    for (const c of recentCorrections) {
+      lines.push(`- [${c.category}] "${c.original}" → "${c.corrected}"`);
+    }
+  }
+
   return lines.join('\n');
 }
+
+// ─── End-of-session summary ────────────────────────────────────────────────
+
+export const SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'topics', 'weak_areas', 'suggested_level'],
+  properties: {
+    summary: {
+      type: 'string',
+      description:
+        'Concise recap of the session in 3–5 sentences. Mention what was discussed and how the student performed.',
+    },
+    topics: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Topics covered in this session.',
+    },
+    weak_areas: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Recurring error patterns or skill gaps to address in future sessions. Keep concrete (e.g. "past tense of irregular verbs", not "grammar").',
+    },
+    suggested_level: {
+      type: 'string',
+      enum: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'none'],
+      description:
+        '"none" if the current level still fits. Otherwise the CEFR level you would recommend based on this session.',
+    },
+  },
+};
+
+export const SUMMARY_SYSTEM = `You are reviewing a conversation between a Spanish-native English learner and their tutor.
+Produce a concise recap, the topics covered, the recurring weak areas worth focusing on next time, and your level estimate.
+Output ONLY the JSON object that matches the response schema. No prose outside it.`;
