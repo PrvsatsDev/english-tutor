@@ -1,0 +1,22 @@
+{
+  "name": "english-tutor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "setup": "bash setup.sh",
+    "db:init": "node src/db.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
+    "better-sqlite3": "^12.10.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ws": "^8.21.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+.env
+data/tutor.db
+data/tutor.db-journal
+data/tutor.db-wal
+data/tutor.db-shm
+data/audio/
+data/models/
+bin/
+vendor/
+*.log
+.DS_Store
