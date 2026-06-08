@@ -25,8 +25,21 @@ ws.on('open', () => {
 ws.on('message', async (raw) => {
   const msg = JSON.parse(raw.toString());
   switch (msg.type) {
+    case 'users':
+      // New 2-phase handshake: pick a user before talking. Create one if
+      // USER_NAME is set, otherwise select USER_ID (default 1).
+      if (process.env.USER_NAME) {
+        const level = process.env.USER_LEVEL || 'B1';
+        console.log(`[client] creating user "${process.env.USER_NAME}" (${level})`);
+        ws.send(JSON.stringify({ type: 'create_user', name: process.env.USER_NAME, level }));
+      } else {
+        const userId = Number(process.env.USER_ID) || 1;
+        console.log(`[client] selecting user #${userId} (available: ${msg.users.map((u) => `#${u.id} ${u.name}`).join(', ')})`);
+        ws.send(JSON.stringify({ type: 'select_user', user_id: userId }));
+      }
+      break;
     case 'session_start':
-      console.log(`[client] session #${msg.sessionId}, level=${msg.profile.level}, memory: ${msg.memory.summaries} summaries / ${msg.memory.corrections} corrections`);
+      console.log(`[client] session #${msg.sessionId} user=#${msg.userId} ${msg.userName}, level=${msg.profile.level}, memory: ${msg.memory.summaries} summaries / ${msg.memory.corrections} corrections`);
       console.log(`[client] uploading ${audio.byteLength} bytes of audio...`);
       ws.send(audio);
       break;

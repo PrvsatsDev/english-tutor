@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { db, getProfile, setProfile } from './db.js';
+import { db, getProfile, setProfile, VALID_LEVELS } from './db.js';
 import { SUMMARY_SCHEMA, SUMMARY_SYSTEM } from './prompts.js';
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
@@ -8,31 +8,32 @@ const client = new Anthropic();
 
 const nowIso = () => new Date().toISOString();
 
-export function startSession() {
-  const r = db.prepare('INSERT INTO sessions (started_at) VALUES (?)').run(nowIso());
+export function startSession(userId) {
+  const r = db.prepare('INSERT INTO sessions (user_id, started_at) VALUES (?, ?)').run(userId, nowIso());
   return r.lastInsertRowid;
 }
 
-export function getSessionContext({ summariesLimit = 3, correctionsLimit = 20 } = {}) {
-  const profile = getProfile();
+export function getSessionContext(userId, { summariesLimit = 3, correctionsLimit = 20 } = {}) {
+  const profile = getProfile(userId);
   const recentSummaries = db
     .prepare(`
       SELECT summary, topics, level_snapshot, started_at
       FROM sessions
-      WHERE summary IS NOT NULL
+      WHERE user_id = ? AND summary IS NOT NULL
       ORDER BY id DESC
       LIMIT ?
     `)
-    .all(summariesLimit);
+    .all(userId, summariesLimit);
   const recentCorrections = db
     .prepare(`
-      SELECT id, original, corrected, category, explanation, ts
-      FROM corrections
-      WHERE resolved_at IS NULL
-      ORDER BY id DESC
+      SELECT c.id, c.original, c.corrected, c.category, c.explanation, c.ts
+      FROM corrections c
+      JOIN sessions s ON c.session_id = s.id
+      WHERE s.user_id = ? AND c.resolved_at IS NULL
+      ORDER BY c.id DESC
       LIMIT ?
     `)
-    .all(correctionsLimit);
+    .all(userId, correctionsLimit);
   return { profile, recentSummaries, recentCorrections };
 }
 
@@ -46,15 +47,16 @@ const insertCorrection = () =>
   );
 const upsertVocab = () =>
   db.prepare(`
-    INSERT INTO vocabulary (word, introduced_at, times_used, last_used_at)
-    VALUES (?, ?, 0, NULL)
-    ON CONFLICT(word) DO NOTHING
+    INSERT INTO vocabulary (user_id, word, introduced_at, times_used, last_used_at)
+    VALUES (?, ?, ?, 0, NULL)
+    ON CONFLICT(user_id, word) DO NOTHING
   `);
 
 // Persist one full turn: student utterance, tutor reply, any corrections,
 // and any vocabulary the tutor suggested. Mutates parsed.corrections in
 // place to add a DB `id` to each — the UI needs it to mark them resolved.
-export function persistTurn(sessionId, { userText, parsed, userAudioPath = null }) {
+// Corrections inherit user scoping via session_id; vocabulary is scoped by userId.
+export function persistTurn(sessionId, { userId, userText, parsed, userAudioPath = null }) {
   const ts = nowIso();
   const msg = insertMessage();
   const corr = insertCorrection();
@@ -68,7 +70,7 @@ export function persistTurn(sessionId, { userText, parsed, userAudioPath = null 
     }
     for (const phrase of parsed.suggested_phrases || []) {
       const word = phrase.trim().toLowerCase();
-      if (word) vocab.run(word, ts);
+      if (word) vocab.run(userId, word, ts);
     }
   })();
 }
@@ -80,22 +82,23 @@ export function markCorrectionResolved(id) {
   return r.changes > 0;
 }
 
-export function listVocabulary({ limit = 200 } = {}) {
+export function listVocabulary({ userId, limit = 200 } = {}) {
   return db
     .prepare(`
       SELECT word, introduced_at, times_used, last_used_at, mastery
       FROM vocabulary
+      WHERE user_id = ?
       ORDER BY introduced_at DESC
       LIMIT ?
     `)
-    .all(limit);
+    .all(userId, limit);
 }
 
 // Close a session: ask Claude to summarize, persist the summary, and merge
 // any new weak areas into the profile so they show up in future sessions.
 // Does NOT auto-update the level — returns level_change_proposed so the
 // caller (UI) can confirm with the user before mutating the profile.
-export async function endSession(sessionId, { applyLevel = false } = {}) {
+export async function endSession(sessionId, { userId, applyLevel = false } = {}) {
   const rows = db
     .prepare('SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC')
     .all(sessionId);
@@ -130,7 +133,7 @@ export async function endSession(sessionId, { applyLevel = false } = {}) {
   if (!textBlock) throw new Error('Summary response had no text block');
   const summary = JSON.parse(textBlock.text);
 
-  const profile = getProfile();
+  const profile = getProfile(userId);
   const levelSnapshot = summary.suggested_level === 'none' ? null : summary.suggested_level;
   const levelChangeProposed =
     levelSnapshot && levelSnapshot !== profile.level
@@ -146,45 +149,52 @@ export async function endSession(sessionId, { applyLevel = false } = {}) {
   if (summary.weak_areas?.length) {
     const existing = Array.isArray(profile.weak_areas) ? profile.weak_areas : [];
     const merged = Array.from(new Set([...existing, ...summary.weak_areas])).slice(-15);
-    setProfile('weak_areas', merged);
+    setProfile(userId, 'weak_areas', merged);
   }
 
   if (applyLevel && levelChangeProposed) {
-    setProfile('level', levelChangeProposed.to);
+    setProfile(userId, 'level', levelChangeProposed.to);
   }
 
   return { ...summary, level_change_proposed: levelChangeProposed };
 }
 
-const VALID_LEVELS = new Set(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']);
-
 // Explicit level update, used when the UI confirms an end-of-session suggestion.
-export function updateLevel(level) {
+export function updateLevel(userId, level) {
   if (!VALID_LEVELS.has(level)) {
     throw new Error(`Invalid CEFR level: ${level}`);
   }
-  setProfile('level', level);
+  setProfile(userId, 'level', level);
 }
 
-// CLI: inspect what's currently in memory. Useful for debugging.
+// CLI: inspect what's currently in memory for a given user (default id=1).
+// Usage: node src/memory.js [user_id]
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const profile = getProfile();
+  const userId = Number(process.argv[2]) || 1;
+  const user = db.prepare('SELECT id, name FROM users WHERE id = ?').get(userId);
+  console.log(`--- user --- #${userId} ${user ? user.name : '(not found)'}`);
+
+  const profile = getProfile(userId);
   const sessions = db
-    .prepare('SELECT id, started_at, ended_at, summary, level_snapshot FROM sessions ORDER BY id DESC LIMIT 10')
-    .all();
+    .prepare('SELECT id, started_at, ended_at, summary, level_snapshot FROM sessions WHERE user_id = ? ORDER BY id DESC LIMIT 10')
+    .all(userId);
   const corrections = db
-    .prepare('SELECT category, original, corrected FROM corrections ORDER BY id DESC LIMIT 20')
-    .all();
+    .prepare(`
+      SELECT c.category, c.original, c.corrected
+      FROM corrections c JOIN sessions s ON c.session_id = s.id
+      WHERE s.user_id = ? ORDER BY c.id DESC LIMIT 20
+    `)
+    .all(userId);
   const vocab = db
-    .prepare('SELECT word, introduced_at, times_used FROM vocabulary ORDER BY introduced_at DESC LIMIT 20')
-    .all();
+    .prepare('SELECT word, introduced_at, times_used FROM vocabulary WHERE user_id = ? ORDER BY introduced_at DESC LIMIT 20')
+    .all(userId);
   const counts = db.prepare(`
     SELECT
-      (SELECT COUNT(*) FROM sessions) AS sessions,
-      (SELECT COUNT(*) FROM messages) AS messages,
-      (SELECT COUNT(*) FROM corrections) AS corrections,
-      (SELECT COUNT(*) FROM vocabulary) AS vocabulary
-  `).get();
+      (SELECT COUNT(*) FROM sessions WHERE user_id = @u) AS sessions,
+      (SELECT COUNT(*) FROM messages m JOIN sessions s ON m.session_id = s.id WHERE s.user_id = @u) AS messages,
+      (SELECT COUNT(*) FROM corrections c JOIN sessions s ON c.session_id = s.id WHERE s.user_id = @u) AS corrections,
+      (SELECT COUNT(*) FROM vocabulary WHERE user_id = @u) AS vocabulary
+  `).get({ u: userId });
 
   console.log('--- counts ---'); console.log(counts);
   console.log('\n--- profile ---'); console.log(profile);

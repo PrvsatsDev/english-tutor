@@ -8,11 +8,12 @@ const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
 const client = new Anthropic();
 
-// Create a tutor instance scoped to a single conversation session.
+// Create a tutor instance scoped to a single conversation session for one user.
 // `persist: true` (default) opens a DB session and writes each turn.
-export function createTutor({ persist = true, sessionId: existingId } = {}) {
-  const context = getSessionContext();
-  const sessionId = persist ? (existingId ?? startSession()) : null;
+export function createTutor({ userId, persist = true, sessionId: existingId } = {}) {
+  if (!userId) throw new Error('createTutor requires a userId');
+  const context = getSessionContext(userId);
+  const sessionId = persist ? (existingId ?? startSession(userId)) : null;
   const system = [
     {
       type: 'text',
@@ -48,18 +49,19 @@ export function createTutor({ persist = true, sessionId: existingId } = {}) {
     }
 
     messages.push({ role: 'assistant', content: textBlock.text });
-    if (sessionId) persistTurn(sessionId, { userText, parsed, userAudioPath });
+    if (sessionId) persistTurn(sessionId, { userId, userText, parsed, userAudioPath });
     return { parsed, usage: response.usage };
   }
 
   async function end({ applyLevel = false } = {}) {
     if (!sessionId) return null;
-    return endSession(sessionId, { applyLevel });
+    return endSession(sessionId, { userId, applyLevel });
   }
 
   return {
     respond,
     end,
+    get userId() { return userId; },
     get sessionId() { return sessionId; },
     get history() { return messages.slice(); },
     get context() { return context; },
@@ -71,7 +73,7 @@ export function createTutor({ persist = true, sessionId: existingId } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const readline = await import('node:readline/promises');
   initDb();
-  const tutor = createTutor();
+  const tutor = createTutor({ userId: Number(process.argv[2]) || 1 });
   console.log(
     `Tutor ready  model=${MODEL}  level=${tutor.context.profile.level}  ` +
     `session=#${tutor.sessionId}  summaries=${tutor.context.recentSummaries.length}  ` +

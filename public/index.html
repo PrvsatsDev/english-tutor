@@ -10,6 +10,12 @@
   <header>
     <h1>English Tutor</h1>
     <div class="header-right">
+      <label class="user-pick">
+        <span class="muted small">User</span>
+        <select id="user-select" disabled>
+          <option value="">—</option>
+        </select>
+      </label>
       <span id="session-info">connecting…</span>
       <button id="vocab-btn" type="button">Vocabulary</button>
       <button id="end-btn" type="button" disabled>End session</button>
@@ -49,6 +55,48 @@
     </div>
     <div id="status" class="status">offline</div>
   </footer>
+
+  <dialog id="new-user-dialog">
+    <h2>New user</h2>
+    <form id="new-user-form" method="dialog">
+      <label class="field">
+        <span>Name</span>
+        <input id="new-user-name" type="text" autocomplete="off" required maxlength="40" placeholder="e.g. Ana">
+      </label>
+      <label class="field">
+        <span>Starting level</span>
+        <select id="new-user-level">
+          <option value="A1">A1 — Beginner</option>
+          <option value="A2">A2 — Elementary</option>
+          <option value="B1" selected>B1 — Intermediate</option>
+          <option value="B2">B2 — Upper-intermediate</option>
+          <option value="C1">C1 — Advanced</option>
+          <option value="C2">C2 — Proficient</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Interests <em class="muted small">(optional, comma-separated)</em></span>
+        <input id="new-user-interests" type="text" autocomplete="off" maxlength="120" placeholder="e.g. cooking, travel, football">
+      </label>
+      <label class="field">
+        <span>Goal <em class="muted small">(optional)</em></span>
+        <input id="new-user-goals" type="text" autocomplete="off" maxlength="160" placeholder="e.g. chat with my grandkids abroad">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="new-user-cancel" value="cancel">Cancel</button>
+        <button type="submit" id="new-user-create">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-user-dialog">
+    <h2>Delete a user</h2>
+    <p class="muted small">This permanently removes the user and all their sessions, corrections and vocabulary.</p>
+    <ul id="delete-user-list"></ul>
+    <div class="dialog-actions">
+      <button type="button" id="delete-user-close">Close</button>
+    </div>
+  </dialog>
 
   <dialog id="vocab-dialog">
     <h2>Vocabulary introduced</h2>

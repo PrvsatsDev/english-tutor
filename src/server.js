@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 import { basename } from 'node:path';
-import { init as initDb } from './db.js';
+import { init as initDb, listUsers, createUser, deleteUser } from './db.js';
 import { listVocabulary, markCorrectionResolved, updateLevel } from './memory.js';
 import { synthesize } from './tts.js';
 import { transcribe } from './stt.js';
@@ -36,36 +36,57 @@ function send(ws, obj) {
 }
 
 wss.on('connection', (ws) => {
-  const tutor = createTutor();
+  // No session yet — the client must pick (or create) a user first. The tutor
+  // is created lazily once we know who's talking, and can be swapped if the
+  // user is changed mid-socket via the header dropdown.
+  let tutor = null;
   let ended = false;
   let turnCounter = 0;
-  console.log(`[ws] connect  session=#${tutor.sessionId}`);
+  console.log('[ws] connect (awaiting user selection)');
 
-  send(ws, {
-    type: 'session_start',
-    sessionId: tutor.sessionId,
-    profile: tutor.context.profile,
-    memory: {
-      summaries: tutor.context.recentSummaries.length,
-      corrections: tutor.context.recentCorrections.length,
-    },
-  });
+  send(ws, { type: 'users', users: listUsers() });
 
   async function finalize(reason) {
-    if (ended) return;
+    if (!tutor || ended) return;
     ended = true;
     try {
       const summary = await tutor.end();
       console.log(`[ws] session=#${tutor.sessionId} closed (${reason})${summary ? ' summarized' : ' empty'}`);
-      send(ws, { type: 'summary', summary });
+      send(ws, { type: 'summary', summary, reason });
     } catch (err) {
       console.error(`[ws] session=#${tutor.sessionId} end failed: ${err.message}`);
       send(ws, { type: 'error', message: `summary failed: ${err.message}` });
     }
   }
 
+  // Start (or switch to) a session for the given user. Finalizes any in-flight
+  // session first so the previous user's summary is persisted.
+  async function startForUser(userId) {
+    if (tutor && !ended) await finalize('switch');
+    tutor = createTutor({ userId });
+    ended = false;
+    turnCounter = 0;
+    const user = listUsers().find((u) => u.id === userId);
+    console.log(`[ws] user=#${userId} (${user?.name ?? '?'}) session=#${tutor.sessionId}`);
+    send(ws, {
+      type: 'session_start',
+      sessionId: tutor.sessionId,
+      userId,
+      userName: user?.name ?? null,
+      profile: tutor.context.profile,
+      memory: {
+        summaries: tutor.context.recentSummaries.length,
+        corrections: tutor.context.recentCorrections.length,
+      },
+    });
+  }
+
   ws.on('message', async (data, isBinary) => {
     if (isBinary) {
+      if (!tutor) {
+        send(ws, { type: 'error', message: 'Select a user before speaking.' });
+        return;
+      }
       const t0 = Date.now();
       turnCounter += 1;
       const audioPath = join(AUDIO_DIR, `s${tutor.sessionId}-t${turnCounter}-${Date.now()}.webm`);
@@ -110,13 +131,50 @@ wss.on('connection', (ws) => {
     try { msg = JSON.parse(data.toString()); }
     catch { send(ws, { type: 'error', message: 'Invalid JSON control message' }); return; }
 
+    if (msg.type === 'select_user') {
+      try {
+        await startForUser(Number(msg.user_id));
+      } catch (err) {
+        send(ws, { type: 'error', message: err.message });
+      }
+      return;
+    }
+    if (msg.type === 'create_user') {
+      try {
+        const u = createUser(msg.name, msg.level, { interests: msg.interests, goals: msg.goals });
+        await startForUser(u.id);
+      } catch (err) {
+        send(ws, { type: 'error', message: err.message });
+      }
+      return;
+    }
+    if (msg.type === 'delete_user') {
+      try {
+        const id = Number(msg.user_id);
+        // If the active user is being deleted, discard their (now-doomed)
+        // session without summarizing — its data is about to disappear.
+        if (tutor && tutor.userId === id) { ended = true; tutor = null; }
+        deleteUser(id);
+        send(ws, { type: 'users', users: listUsers() });
+      } catch (err) {
+        send(ws, { type: 'error', message: err.message });
+      }
+      return;
+    }
+
+    // Everything below operates on the active session.
+    if (!tutor) {
+      send(ws, { type: 'error', message: 'Select a user first.' });
+      return;
+    }
+
     if (msg.type === 'end') {
       // Don't close the socket here — let the client send `apply_level`
       // or `close` after the user dismisses the summary dialog.
       await finalize('client end');
     } else if (msg.type === 'apply_level') {
       try {
-        updateLevel(msg.level);
+        updateLevel(tutor.userId, msg.level);
         send(ws, { type: 'profile_updated', level: msg.level });
         console.log(`[ws] session=#${tutor.sessionId} level updated → ${msg.level}`);
       } catch (err) {
@@ -126,7 +184,7 @@ wss.on('connection', (ws) => {
       const changed = markCorrectionResolved(Number(msg.correction_id));
       send(ws, { type: 'correction_resolved', correction_id: Number(msg.correction_id), changed });
     } else if (msg.type === 'get_vocabulary') {
-      send(ws, { type: 'vocabulary', items: listVocabulary({ limit: 200 }) });
+      send(ws, { type: 'vocabulary', items: listVocabulary({ userId: tutor.userId, limit: 200 }) });
     } else if (msg.type === 'close') {
       ws.close();
     } else {
@@ -135,7 +193,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => { finalize('disconnect'); });
-  ws.on('error', (err) => { console.error(`[ws] session=#${tutor.sessionId} error:`, err.message); });
+  ws.on('error', (err) => { console.error(`[ws] session=#${tutor?.sessionId ?? '-'} error:`, err.message); });
 });
 
 server.listen(PORT, () => {
